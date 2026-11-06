@@ -1,31 +1,69 @@
+import json
 import math
 import os
+import re
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from geoalchemy2.shape import from_shape, to_shape
 from pydantic import BaseModel, Field
-from shapely.geometry import Point, box, mapping
+from shapely.geometry import MultiPolygon, Point, mapping, shape
+from shapely.prepared import prep
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from .db import Base, engine, get_db
-from .models import Campaign, Task
+from .db import Base, SessionLocal, engine, get_db
+from .models import Campaign, Region, Task
 
-# Approximate bounding boxes (west, south, east, north) for demo purposes.
-# Replace with real county boundary polygons later.
-REGIONS = {
-    "Nakuru": (35.60, -1.20, 36.60, 0.20),
-    "Uasin Gishu": (34.95, 0.25, 35.65, 0.90),
-    "Trans Nzoia": (34.60, 0.80, 35.25, 1.25),
-    "Kiambu": (36.55, -1.30, 37.10, -0.80),
-    "Machakos": (36.95, -1.80, 37.80, -0.95),
-    "Bungoma": (34.25, 0.45, 34.85, 1.00),
+DATA_FILE = Path(__file__).parent / "data" / "kenya_counties.geojson"
+
+# Launch counties in priority order. Key = normalised county name.
+LAUNCH = {
+    "transnzoia": (1, "Trans Nzoia", "Maize and crop-condition monitoring (primary launch region)"),
+    "uasingishu": (2, "Uasin Gishu", "Maize and wheat, crop-stage monitoring (first expansion)"),
+    "nakuru": (3, "Nakuru", "Diversified: maize, potatoes, beans, horticulture"),
+    "bungoma": (4, "Bungoma", "Smallholder maize expansion"),
+    "kiambu": (5, "Kiambu", "Coffee, horticulture, mixed smallholder farming"),
+    "machakos": (6, "Machakos", "Dryland agriculture and crop resilience"),
 }
 
-app = FastAPI(title="FieldMint API", version="0.1.0")
+
+def norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def seed_regions():
+    with SessionLocal() as db:
+        if db.scalar(select(func.count()).select_from(Region)):
+            return
+        if not DATA_FILE.exists():
+            raise RuntimeError(
+                f"Missing {DATA_FILE}. Download the Kenya county boundaries first (see setup steps)."
+            )
+        fc = json.loads(DATA_FILE.read_text())
+        found = set()
+        for f in fc["features"]:
+            props = f["properties"]
+            raw = props.get("shapeName") or props.get("NAME_1") or props.get("name") or ""
+            key = norm(raw)
+            geom = shape(f["geometry"]).buffer(0)
+            if geom.geom_type == "Polygon":
+                geom = MultiPolygon([geom])
+            prio, name, focus = LAUNCH.get(key, (0, raw, ""))
+            if key in LAUNCH:
+                found.add(key)
+            db.add(Region(slug=key, name=name, priority=prio, focus=focus,
+                          geom=from_shape(geom, srid=4326)))
+        db.commit()
+        missing = set(LAUNCH) - found
+        if missing:
+            print(f"WARNING: launch counties not found in boundary file: {missing}")
+
+
+app = FastAPI(title="FieldMint API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
@@ -39,6 +77,7 @@ def init_db():
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
     Base.metadata.create_all(engine)
+    seed_regions()
 
 
 class CampaignIn(BaseModel):
@@ -67,19 +106,30 @@ class CampaignOut(BaseModel):
     task_count: int
 
 
-def sample_points(area, n):
-    """Evenly spread n sampling points across a polygon using a grid."""
+def sample_points(geom, n):
+    """Spread ~n points evenly across the polygon, strictly inside it.
+    Uses a slightly shrunk boundary (~1 km) so points stay away from the edge."""
+    inner = geom.buffer(-0.01)
+    area = geom if inner.is_empty else inner
+    prepared = prep(area)
     minx, miny, maxx, maxy = area.bounds
-    cols = max(1, math.ceil(math.sqrt(n * (maxx - minx) / (maxy - miny))))
-    rows = max(1, math.ceil(n / cols))
+    step = math.sqrt(area.area / n)
     pts = []
-    for r in range(rows):
-        for c in range(cols):
-            p = Point(minx + (c + 0.5) * (maxx - minx) / cols,
-                      miny + (r + 0.5) * (maxy - miny) / rows)
-            if area.contains(p):
-                pts.append(p)
-    if len(pts) > n:  # thin evenly rather than truncating one side
+    for _ in range(15):
+        pts = []
+        y = miny + step / 2
+        while y < maxy:
+            x = minx + step / 2
+            while x < maxx:
+                p = Point(x, y)
+                if prepared.contains(p):
+                    pts.append(p)
+                x += step
+            y += step
+        if len(pts) >= n:
+            break
+        step *= 0.85
+    if len(pts) > n:
         pts = [pts[int(i * len(pts) / n)] for i in range(n)]
     return pts
 
@@ -102,20 +152,28 @@ def health():
 
 
 @app.get("/regions")
-def regions():
-    return [{"name": k, "bbox": v} for k, v in REGIONS.items()]
+def regions(db: Session = Depends(get_db)):
+    rows = db.scalars(select(Region).where(Region.priority > 0).order_by(Region.priority)).all()
+    return [
+        {"name": r.name, "focus": r.focus, "priority": r.priority,
+         "bbox": list(to_shape(r.geom).bounds)}
+        for r in rows
+    ]
 
 
 @app.post("/campaigns", response_model=CampaignOut, status_code=201)
 def create_campaign(body: CampaignIn, db: Session = Depends(get_db)):
-    bbox = REGIONS.get(body.region)
-    if not bbox:
-        raise HTTPException(422, f"Unknown region '{body.region}'")
-    area = box(*bbox)
-    c = Campaign(**body.model_dump(), area=from_shape(area, srid=4326))
+    region = db.scalar(select(Region).where(Region.slug == norm(body.region), Region.priority > 0))
+    if not region:
+        raise HTTPException(422, f"Region '{body.region}' is not open for campaigns")
+    geom = to_shape(region.geom)
+    points = sample_points(geom, body.target_observations)
+    if not points:
+        raise HTTPException(500, "Could not generate sampling points for this region")
+    c = Campaign(**{**body.model_dump(), "region": region.name}, area=region.geom)
     db.add(c)
     db.flush()
-    for p in sample_points(area, body.target_observations):
+    for p in points:
         db.add(Task(campaign_id=c.id, location=from_shape(p, srid=4326)))
     db.commit()
     db.refresh(c)

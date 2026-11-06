@@ -9,6 +9,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
 
+class Region(Base):
+    """Administrative areas (counties). priority > 0 means open for campaigns."""
+    __tablename__ = "regions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True)
+    name: Mapped[str] = mapped_column(String(80))
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    focus: Mapped[str] = mapped_column(String(200), default="")
+    geom = mapped_column(Geometry("MULTIPOLYGON", srid=4326))
+
+
 class Campaign(Base):
     __tablename__ = "campaigns"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -20,7 +31,7 @@ class Campaign(Base):
     reward_lamports: Mapped[int] = mapped_column(BigInteger)
     target_observations: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft -> funded -> active -> closed
-    area = mapped_column(Geometry("POLYGON", srid=4326))
+    area = mapped_column(Geometry("MULTIPOLYGON", srid=4326))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
