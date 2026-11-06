@@ -19,7 +19,7 @@ from .auth import User, current_user, require_role
 from .auth import router as auth_router
 from .db import Base, SessionLocal, engine, get_db
 from .models import Campaign, Profile, Region, Task
-from .solana_rpc import ESCROW, get_parsed_tx, transferred_lamports
+from .escrow import router as escrow_router
 
 DATA_FILE = Path(__file__).parent / "data" / "kenya_counties.geojson"
 
@@ -70,7 +70,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(auth_router)
+app.include_router(escrow_router)
 
 
 @app.on_event("startup")
@@ -107,6 +107,8 @@ class CampaignOut(BaseModel):
     status: str
     funding_signature: str | None = None
     funded_at: datetime | None = None
+    escrow_address: str | None = None
+    deadline_at: datetime | None = None
     created_at: datetime
     area: dict
     task_count: int
@@ -146,6 +148,7 @@ def to_out(c: Campaign, db: Session) -> CampaignOut:
         target_observations=c.target_observations,
         budget_lamports=c.reward_lamports * c.target_observations,
         status=c.status, funding_signature=c.funding_signature, funded_at=c.funded_at,
+        escrow_address=c.escrow_address, deadline_at=c.deadline_at,
         created_at=c.created_at, area=mapping(to_shape(c.area)), task_count=count,
     )
 
@@ -154,10 +157,6 @@ def to_out(c: Campaign, db: Session) -> CampaignOut:
 def health():
     return {"status": "ok"}
 
-
-@app.get("/config")
-def config():
-    return {"escrow": ESCROW, "cluster": "devnet"}
 
 
 @app.get("/regions")
@@ -187,31 +186,6 @@ def create_campaign(body: CampaignIn, user: User = Depends(require_role("org")),
     return to_out(c, db)
 
 
-@app.post("/campaigns/{campaign_id}/fund", response_model=CampaignOut)
-def fund_campaign(campaign_id: uuid.UUID, body: FundIn,
-                  user: User = Depends(require_role("org")), db: Session = Depends(get_db)):
-    c = db.get(Campaign, campaign_id)
-    if not c:
-        raise HTTPException(404, "Campaign not found")
-    if c.owner_wallet != user.wallet:
-        raise HTTPException(403, "Only the campaign owner can fund it")
-    if c.status != "draft":
-        raise HTTPException(409, "Campaign is already funded")
-    if db.scalar(select(Campaign.id).where(Campaign.funding_signature == body.signature)):
-        raise HTTPException(409, "This transaction was already used to fund a campaign")
-    tx = get_parsed_tx(body.signature)
-    if not tx:
-        raise HTTPException(422, "Transaction not found or not confirmed yet. Try verifying again in a moment.")
-    paid = transferred_lamports(tx, c.owner_wallet, ESCROW)
-    budget = c.reward_lamports * c.target_observations
-    if paid < budget:
-        raise HTTPException(422, f"Transfer of {paid} lamports to escrow is below the {budget} lamport budget")
-    c.status = "active"
-    c.funding_signature = body.signature
-    c.funded_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(c)
-    return to_out(c, db)
 
 
 def can_view(c: Campaign, user: User) -> bool:

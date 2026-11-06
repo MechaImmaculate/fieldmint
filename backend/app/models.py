@@ -33,6 +33,8 @@ class Campaign(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")
     funding_signature: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     funded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # draft -> funded -> active -> closed
+    escrow_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     area = mapped_column(Geometry("MULTIPOLYGON", srid=4326))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
