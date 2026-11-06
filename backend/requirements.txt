@@ -5,3 +5,7 @@ geoalchemy2
 psycopg[binary]
 shapely
 pydantic>=2
+pynacl
+base58
+pyjwt
+httpx

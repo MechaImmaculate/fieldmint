@@ -30,7 +30,9 @@ class Campaign(Base):
     owner_wallet: Mapped[str] = mapped_column(String(64), index=True)
     reward_lamports: Mapped[int] = mapped_column(BigInteger)
     target_observations: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft -> funded -> active -> closed
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    funding_signature: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    funded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # draft -> funded -> active -> closed
     area = mapped_column(Geometry("MULTIPOLYGON", srid=4326))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

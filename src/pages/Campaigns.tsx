@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Campaign } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { solFromLamports } from "../lib/solana";
+import StatusChip from "../components/StatusChip";
 
 export default function Campaigns() {
+  const { roles } = useAuth();
   const [items, setItems] = useState<Campaign[] | null>(null);
   const [error, setError] = useState("");
 
@@ -13,29 +16,31 @@ export default function Campaigns() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-2">
-        <p className="text-sm uppercase tracking-[0.18em] text-muted">Ground-truth infrastructure</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Verified field data, paid on Solana.</h1>
-        <p className="max-w-2xl text-muted">
-          Commission agricultural and Earth Observation ground-truth campaigns across Kenya.
-        </p>
-      </section>
-
-      {error && <p className="text-sm text-red-600">API unreachable: {error}</p>}
-      {items?.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-border-low p-10 text-center">
-          <p className="mb-4 text-muted">No campaigns yet.</p>
-          <Link to="/campaigns/new" className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-bg1">
-            Create the first campaign
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Campaigns</h1>
+          <p className="mt-1 text-muted">Ground-truth collection campaigns and their funding status.</p>
+        </div>
+        {roles.includes("org") && (
+          <Link to="/campaigns/new" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">
+            New campaign
           </Link>
+        )}
+      </div>
+
+      {error && <p className="text-sm text-danger">API unreachable: {error}</p>}
+      {items?.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border-strong p-10 text-center text-muted">
+          No campaigns yet.
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items?.map((c) => (
-          <Link key={c.id} to={`/campaigns/${c.id}`} className="rounded-2xl border border-border-low bg-card p-5 transition hover:-translate-y-0.5 hover:shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wide text-muted">{c.region}</span>
-              <span className="rounded-full bg-cream px-2.5 py-0.5 text-xs font-semibold capitalize">{c.status}</span>
+          <Link key={c.id} to={`/campaigns/${c.id}`}
+            className="rounded-2xl border border-border-low bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">{c.region}</span>
+              <StatusChip status={c.status} />
             </div>
             <h2 className="font-semibold">{c.title}</h2>
             <p className="mt-3 text-sm text-muted">

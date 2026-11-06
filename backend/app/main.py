@@ -3,7 +3,7 @@ import math
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -15,12 +15,14 @@ from shapely.prepared import prep
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from .auth import User, require_role
+from .auth import router as auth_router
 from .db import Base, SessionLocal, engine, get_db
 from .models import Campaign, Region, Task
+from .solana_rpc import ESCROW, get_parsed_tx, transferred_lamports
 
 DATA_FILE = Path(__file__).parent / "data" / "kenya_counties.geojson"
 
-# Launch counties in priority order. Key = normalised county name.
 LAUNCH = {
     "transnzoia": (1, "Trans Nzoia", "Maize and crop-condition monitoring (primary launch region)"),
     "uasingishu": (2, "Uasin Gishu", "Maize and wheat, crop-stage monitoring (first expansion)"),
@@ -40,9 +42,7 @@ def seed_regions():
         if db.scalar(select(func.count()).select_from(Region)):
             return
         if not DATA_FILE.exists():
-            raise RuntimeError(
-                f"Missing {DATA_FILE}. Download the Kenya county boundaries first (see setup steps)."
-            )
+            raise RuntimeError(f"Missing {DATA_FILE}. Download the Kenya county boundaries first.")
         fc = json.loads(DATA_FILE.read_text())
         found = set()
         for f in fc["features"]:
@@ -63,13 +63,14 @@ def seed_regions():
             print(f"WARNING: launch counties not found in boundary file: {missing}")
 
 
-app = FastAPI(title="FieldMint API", version="0.2.0")
+app = FastAPI(title="FieldMint API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
 
 
 @app.on_event("startup")
@@ -85,9 +86,12 @@ class CampaignIn(BaseModel):
     description: str = ""
     campaign_type: str = "crop_condition"
     region: str
-    owner_wallet: str = Field(min_length=32, max_length=64)
     reward_lamports: int = Field(gt=0)
     target_observations: int = Field(ge=1, le=2000)
+
+
+class FundIn(BaseModel):
+    signature: str = Field(min_length=64, max_length=100)
 
 
 class CampaignOut(BaseModel):
@@ -101,14 +105,14 @@ class CampaignOut(BaseModel):
     target_observations: int
     budget_lamports: int
     status: str
+    funding_signature: str | None = None
+    funded_at: datetime | None = None
     created_at: datetime
     area: dict
     task_count: int
 
 
 def sample_points(geom, n):
-    """Spread ~n points evenly across the polygon, strictly inside it.
-    Uses a slightly shrunk boundary (~1 km) so points stay away from the edge."""
     inner = geom.buffer(-0.01)
     area = geom if inner.is_empty else inner
     prepared = prep(area)
@@ -141,8 +145,8 @@ def to_out(c: Campaign, db: Session) -> CampaignOut:
         region=c.region, owner_wallet=c.owner_wallet, reward_lamports=c.reward_lamports,
         target_observations=c.target_observations,
         budget_lamports=c.reward_lamports * c.target_observations,
-        status=c.status, created_at=c.created_at,
-        area=mapping(to_shape(c.area)), task_count=count,
+        status=c.status, funding_signature=c.funding_signature, funded_at=c.funded_at,
+        created_at=c.created_at, area=mapping(to_shape(c.area)), task_count=count,
     )
 
 
@@ -151,30 +155,60 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/config")
+def config():
+    return {"escrow": ESCROW, "cluster": "devnet"}
+
+
 @app.get("/regions")
 def regions(db: Session = Depends(get_db)):
     rows = db.scalars(select(Region).where(Region.priority > 0).order_by(Region.priority)).all()
-    return [
-        {"name": r.name, "focus": r.focus, "priority": r.priority,
-         "bbox": list(to_shape(r.geom).bounds)}
-        for r in rows
-    ]
+    return [{"name": r.name, "focus": r.focus, "priority": r.priority,
+             "bbox": list(to_shape(r.geom).bounds)} for r in rows]
 
 
 @app.post("/campaigns", response_model=CampaignOut, status_code=201)
-def create_campaign(body: CampaignIn, db: Session = Depends(get_db)):
+def create_campaign(body: CampaignIn, user: User = Depends(require_role("org")),
+                    db: Session = Depends(get_db)):
     region = db.scalar(select(Region).where(Region.slug == norm(body.region), Region.priority > 0))
     if not region:
         raise HTTPException(422, f"Region '{body.region}' is not open for campaigns")
-    geom = to_shape(region.geom)
-    points = sample_points(geom, body.target_observations)
+    points = sample_points(to_shape(region.geom), body.target_observations)
     if not points:
         raise HTTPException(500, "Could not generate sampling points for this region")
-    c = Campaign(**{**body.model_dump(), "region": region.name}, area=region.geom)
+    c = Campaign(**{**body.model_dump(), "region": region.name},
+                 owner_wallet=user.wallet, area=region.geom)
     db.add(c)
     db.flush()
     for p in points:
         db.add(Task(campaign_id=c.id, location=from_shape(p, srid=4326)))
+    db.commit()
+    db.refresh(c)
+    return to_out(c, db)
+
+
+@app.post("/campaigns/{campaign_id}/fund", response_model=CampaignOut)
+def fund_campaign(campaign_id: uuid.UUID, body: FundIn,
+                  user: User = Depends(require_role("org")), db: Session = Depends(get_db)):
+    c = db.get(Campaign, campaign_id)
+    if not c:
+        raise HTTPException(404, "Campaign not found")
+    if c.owner_wallet != user.wallet:
+        raise HTTPException(403, "Only the campaign owner can fund it")
+    if c.status != "draft":
+        raise HTTPException(409, "Campaign is already funded")
+    if db.scalar(select(Campaign.id).where(Campaign.funding_signature == body.signature)):
+        raise HTTPException(409, "This transaction was already used to fund a campaign")
+    tx = get_parsed_tx(body.signature)
+    if not tx:
+        raise HTTPException(422, "Transaction not found or not confirmed yet. Try verifying again in a moment.")
+    paid = transferred_lamports(tx, c.owner_wallet, ESCROW)
+    budget = c.reward_lamports * c.target_observations
+    if paid < budget:
+        raise HTTPException(422, f"Transfer of {paid} lamports to escrow is below the {budget} lamport budget")
+    c.status = "active"
+    c.funding_signature = body.signature
+    c.funded_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(c)
     return to_out(c, db)
@@ -199,11 +233,6 @@ def get_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
 @app.get("/campaigns/{campaign_id}/tasks")
 def campaign_tasks(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
     tasks = db.scalars(select(Task).where(Task.campaign_id == campaign_id)).all()
-    return {
-        "type": "FeatureCollection",
-        "features": [
-            {"type": "Feature", "geometry": mapping(to_shape(t.location)),
-             "properties": {"id": str(t.id), "status": t.status}}
-            for t in tasks
-        ],
-    }
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "geometry": mapping(to_shape(t.location)),
+         "properties": {"id": str(t.id), "status": t.status}} for t in tasks]}

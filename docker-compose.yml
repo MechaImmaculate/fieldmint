@@ -13,6 +13,7 @@ services:
       retries: 20
   api:
     build: ./backend
+    env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql+psycopg://fieldmint:fieldmint@db:5432/fieldmint
       CORS_ORIGINS: http://localhost:5173
