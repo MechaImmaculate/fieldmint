@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: fieldmint
+      POSTGRES_PASSWORD: fieldmint
+      POSTGRES_DB: fieldmint
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fieldmint"]
+      interval: 3s
+      retries: 20
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://fieldmint:fieldmint@db:5432/fieldmint
+      CORS_ORIGINS: http://localhost:5173
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+    volumes: ["./backend/app:/code/app"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+volumes:
+  pgdata:

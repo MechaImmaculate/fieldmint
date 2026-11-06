@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+geoalchemy2
+psycopg[binary]
+shapely
+pydantic>=2
