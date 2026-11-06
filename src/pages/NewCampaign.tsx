@@ -53,7 +53,7 @@ export default function NewCampaign() {
         reward_lamports: lamportsFromSol(f.reward),
         target_observations: f.target,
       }, token!);
-      nav(`/campaigns/${c.id}`);
+      nav(`/app/campaigns/${c.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);

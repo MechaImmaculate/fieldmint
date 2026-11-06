@@ -55,7 +55,3 @@ body {
   font-size: .75rem; font-weight: 600; color: #fff;
   background: linear-gradient(90deg, #9945ff, #14f195);
 }
-
-@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-.marquee { display: flex; width: max-content; gap: 1rem; animation: marquee 40s linear infinite; }
-.marquee:hover { animation-play-state: paused; }

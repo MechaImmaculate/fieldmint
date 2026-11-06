@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from geoalchemy2.shape import from_shape, to_shape
 from pydantic import BaseModel, Field
@@ -15,10 +15,10 @@ from shapely.prepared import prep
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from .auth import User, require_role
+from .auth import User, current_user, require_role
 from .auth import router as auth_router
 from .db import Base, SessionLocal, engine, get_db
-from .models import Campaign, Region, Task
+from .models import Campaign, Profile, Region, Task
 from .solana_rpc import ESCROW, get_parsed_tx, transferred_lamports
 
 DATA_FILE = Path(__file__).parent / "data" / "kenya_counties.geojson"
@@ -214,25 +214,78 @@ def fund_campaign(campaign_id: uuid.UUID, body: FundIn,
     return to_out(c, db)
 
 
+def can_view(c: Campaign, user: User) -> bool:
+    if "org" in user.roles and c.owner_wallet == user.wallet:
+        return True
+    if "reviewer" in user.roles and c.status != "draft":
+        return True
+    return c.status == "active"
+
+
+def can_view(c: Campaign, user: User) -> bool:
+    if "org" in user.roles and c.owner_wallet == user.wallet:
+        return True
+    if "reviewer" in user.roles and c.status != "draft":
+        return True
+    return c.status == "active"
+
+
 @app.get("/campaigns", response_model=list[CampaignOut])
-def list_campaigns(owner: str | None = None, db: Session = Depends(get_db)):
+def list_campaigns(view: str = Query("contribute", pattern="^(org|review|contribute)$"),
+                   user: User = Depends(current_user), db: Session = Depends(get_db)):
     q = select(Campaign).order_by(Campaign.created_at.desc())
-    if owner:
-        q = q.where(Campaign.owner_wallet == owner)
+    if view == "org":
+        if "org" not in user.roles:
+            raise HTTPException(403, "Not authorized")
+        q = q.where(Campaign.owner_wallet == user.wallet)
+    elif view == "review":
+        if "reviewer" not in user.roles:
+            raise HTTPException(403, "Not authorized")
+        q = q.where(Campaign.status != "draft")
+    else:
+        q = q.where(Campaign.status == "active")
     return [to_out(c, db) for c in db.scalars(q)]
 
 
 @app.get("/campaigns/{campaign_id}", response_model=CampaignOut)
-def get_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_campaign(campaign_id: uuid.UUID, user: User = Depends(current_user),
+                 db: Session = Depends(get_db)):
     c = db.get(Campaign, campaign_id)
-    if not c:
+    if not c or not can_view(c, user):
         raise HTTPException(404, "Campaign not found")
     return to_out(c, db)
 
 
 @app.get("/campaigns/{campaign_id}/tasks")
-def campaign_tasks(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
+def campaign_tasks(campaign_id: uuid.UUID, user: User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    c = db.get(Campaign, campaign_id)
+    if not c or not can_view(c, user):
+        raise HTTPException(404, "Campaign not found")
     tasks = db.scalars(select(Task).where(Task.campaign_id == campaign_id)).all()
     return {"type": "FeatureCollection", "features": [
         {"type": "Feature", "geometry": mapping(to_shape(t.location)),
          "properties": {"id": str(t.id), "status": t.status}} for t in tasks]}
+
+
+class ProfileIn(BaseModel):
+    display_name: str = Field(min_length=2, max_length=80)
+    county: str = Field(min_length=2, max_length=80)
+
+
+@app.get("/me")
+def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = db.get(Profile, user.wallet)
+    return {"wallet": user.wallet, "roles": user.roles,
+            "profile": {"display_name": p.display_name, "county": p.county} if p else None}
+
+
+@app.put("/me/profile")
+def save_profile(body: ProfileIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = db.get(Profile, user.wallet)
+    if p:
+        p.display_name, p.county = body.display_name, body.county
+    else:
+        db.add(Profile(wallet=user.wallet, display_name=body.display_name, county=body.county))
+    db.commit()
+    return {"ok": True}

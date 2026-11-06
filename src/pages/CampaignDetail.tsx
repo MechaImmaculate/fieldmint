@@ -26,11 +26,11 @@ export default function CampaignDetail() {
   const [pendingSig, setPendingSig] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
-    api.getCampaign(id).then(setC).catch((e) => setError(String(e)));
-    api.getTasks(id).then(setTasks).catch(() => {});
+    if (!id || !token) return;
+    api.getCampaign(id, token).then(setC).catch((e) => setError(String(e)));
+    api.getTasks(id, token).then(setTasks).catch(() => {});
     api.config().then(setCfg).catch(() => {});
-  }, [id]);
+  }, [id, token]);
 
   if (error) return <p className="text-danger">{error}</p>;
   if (!c) return <p className="text-muted">Loading…</p>;

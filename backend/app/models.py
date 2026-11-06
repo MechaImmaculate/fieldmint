@@ -43,3 +43,10 @@ class Task(Base):
     campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
     location = mapped_column(Geometry("POINT", srid=4326))
     status: Mapped[str] = mapped_column(String(20), default="open")
+
+class Profile(Base):
+    __tablename__ = "profiles"
+    wallet: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(80))
+    county: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())    
