@@ -1,12 +1,9 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type Campaign } from "../lib/api";
-import { solFromLamports } from "../lib/solana";
 
 const what = [
   ["Collect", "Local contributors receive sampling points and submit geotagged observations with evidence."],
   ["Verify", "Spatial and AI-assisted checks flag problems. A human reviewer makes the final decision."],
-  ["Pay", "Approved work is paid out on Solana, with a public transaction record anyone can check."],
+  ["Pay", "Approved work is paid out on Solana, with a transaction record anyone can check."],
 ];
 const steps = [
   "An organization defines what it needs to know and where.",
@@ -16,11 +13,6 @@ const steps = [
 ];
 
 export default function Landing() {
-  const [items, setItems] = useState<Campaign[]>([]);
-  useEffect(() => {
-    api.listCampaigns().then(setItems).catch(() => {});
-  }, []);
-
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-50 border-b border-border-low bg-card/90 backdrop-blur">
@@ -34,8 +26,8 @@ export default function Landing() {
             <a href="#how" className="hover:text-foreground">How it works</a>
             <a href="#contact" className="hover:text-foreground">Contact</a>
           </nav>
-          <Link to="/campaigns" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">
-            Launch app
+          <Link to="/app" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">
+            Sign in
           </Link>
         </div>
       </header>
@@ -55,8 +47,8 @@ export default function Landing() {
               payments on Solana.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link to="/campaigns" className="rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white">
-                Explore campaigns
+              <Link to="/app" className="rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white">
+                Get started
               </Link>
               <a href="#contact" className="rounded-lg border border-border-strong bg-card px-6 py-3 text-sm font-semibold">
                 Contact us
@@ -77,21 +69,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
-      {items.length > 0 && (
-        <section className="overflow-hidden border-y border-border-low bg-card py-5">
-          <div className="marquee">
-            {[...items, ...items].map((c, i) => (
-              <Link key={`${c.id}-${i}`} to={`/campaigns/${c.id}`}
-                className="w-72 shrink-0 rounded-xl border border-border-low bg-background p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">{c.region}</p>
-                <p className="truncate font-semibold">{c.title}</p>
-                <p className="text-sm text-muted">{solFromLamports(c.budget_lamports)} SOL budget</p>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section id="what" className="mx-auto max-w-6xl px-6 py-20">
         <h2 className="mb-8 text-3xl font-bold tracking-tight">What we do</h2>

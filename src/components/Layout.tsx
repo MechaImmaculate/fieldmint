@@ -60,6 +60,7 @@ function WalletArea() {
 }
 
 export default function Layout() {
+  const { roles } = useAuth();
   const link = ({ isActive }: { isActive: boolean }) =>
     `text-sm ${isActive ? "font-semibold text-brand" : "text-muted hover:text-foreground"}`;
   return (
@@ -72,8 +73,10 @@ export default function Layout() {
               FieldMint
             </Link>
             <nav className="flex gap-5">
-              <NavLink to="/campaigns" end className={link}>Campaigns</NavLink>
-              <NavLink to="/campaigns/new" className={link}>New campaign</NavLink>
+              <NavLink to="/app" end className={link}>Home</NavLink>
+              {roles.includes("org") && <NavLink to="/app/org" className={link}>Organization</NavLink>}
+              {roles.includes("reviewer") && <NavLink to="/app/review" className={link}>Review</NavLink>}
+              {roles.length > 0 && <NavLink to="/app/contribute" className={link}>Contribute</NavLink>}
             </nav>
           </div>
           <WalletArea />
