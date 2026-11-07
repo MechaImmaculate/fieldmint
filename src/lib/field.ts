@@ -50,6 +50,11 @@ export const field = {
   mine: (token: string) => call<Submission[]>("/me/submissions", token),
   forCampaign: (id: string, token: string) => call<Submission[]>(`/campaigns/${id}/submissions`, token),
   one: (id: string, token: string) => call<Submission>(`/submissions/${id}`, token),
+    queue: (token: string) => call<Submission[]>("/review/submissions", token),
+  review: (id: string, body: { decision: "approved" | "rejected"; reason: string }, token: string) =>
+    call<Submission>(`/submissions/${id}/review`, token, { method: "POST", body: JSON.stringify(body) }),
+  confirmPayment: (id: string, signature: string | null, token: string) =>
+    call<Submission>(`/submissions/${id}/confirm-payment`, token, { method: "POST", body: JSON.stringify({ signature }) }),
   photoUrl: async (id: string, token: string) => {
     const res = await fetch(`${API}/submissions/${id}/photo`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error("Photo unavailable");

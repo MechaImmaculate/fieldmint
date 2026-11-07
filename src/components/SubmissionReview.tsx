@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
-import { api, type Area } from "../lib/api";
+import { api, type Campaign } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { km, type Submission } from "../lib/field";
 import AuthImage from "./AuthImage";
+import ReviewActions from "./ReviewActions";
 import SubStatus from "./SubStatus";
 import TaskMap from "./TaskMap";
 
-export default function SubmissionReview({ s }: { s: Submission }) {
+type Props = { s: Submission; canReview?: boolean; onChange?: (s: Submission) => void };
+
+export default function SubmissionReview({ s, canReview = false, onChange }: Props) {
   const { token } = useAuth();
-  const [area, setArea] = useState<Area>();
-  const [instructions, setInstructions] = useState("");
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
 
   useEffect(() => {
-    if (!token) return;
-    api.getCampaign(s.campaign_id, token)
-      .then((c) => { setArea(c.area); setInstructions(c.description); })
-      .catch(() => {});
+    if (token) api.getCampaign(s.campaign_id, token).then(setCampaign).catch(() => {});
   }, [s.campaign_id, token]);
 
   const rows: [string, string][] = [
@@ -29,7 +28,9 @@ export default function SubmissionReview({ s }: { s: Submission }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold">{s.campaign_title}</h2>
-          <p className="text-xs text-muted">Submitted {new Date(s.created_at).toLocaleString()}</p>
+          <p className="text-xs text-muted">
+            {s.contributor_name ?? "Contributor"} · <span className="font-mono">{s.contributor_wallet.slice(0, 4)}…{s.contributor_wallet.slice(-4)}</span> · submitted {new Date(s.created_at).toLocaleString()}
+          </p>
         </div>
         <SubStatus status={s.status} />
       </div>
@@ -37,7 +38,7 @@ export default function SubmissionReview({ s }: { s: Submission }) {
       <div className="grid gap-4 md:grid-cols-2">
         <section className="space-y-3 rounded-2xl border border-border-low bg-card p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-brand">What the organizer asked for</h3>
-          {area && <TaskMap area={area} target={[s.target_lat, s.target_lng]} other={[s.lat, s.lng]} />}
+          {campaign && <TaskMap area={campaign.area} target={[s.target_lat, s.target_lng]} other={[s.lat, s.lng]} />}
           <p className="text-xs text-muted">Green: assigned point with its 150 m range. Blue: where it was submitted.</p>
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <div><dt className="text-xs text-muted">Assigned point</dt><dd className="font-mono text-xs">{s.target_lat.toFixed(5)}, {s.target_lng.toFixed(5)}</dd></div>
@@ -45,7 +46,7 @@ export default function SubmissionReview({ s }: { s: Submission }) {
             <div><dt className="text-xs text-muted">Distance apart</dt><dd className="font-semibold">{km(s.distance_m)}</dd></div>
             <div><dt className="text-xs text-muted">Inside campaign area</dt><dd className="font-semibold">{s.inside_area ? "Yes" : "No"}</dd></div>
           </dl>
-          {instructions && <p className="rounded-lg bg-mint p-3 text-sm">{instructions}</p>}
+          {campaign?.description && <p className="rounded-lg bg-mint p-3 text-sm">{campaign.description}</p>}
           <p className="text-xs text-muted">Required: photo, GPS location, crop, growth stage and condition.</p>
         </section>
 
@@ -76,7 +77,18 @@ export default function SubmissionReview({ s }: { s: Submission }) {
         </p>
         <p className="break-all font-mono text-xs text-muted">Record fingerprint: {s.record_hash}</p>
         {s.review_reason && <p className="rounded-lg bg-mint p-3 text-sm">Reviewer note: {s.review_reason}</p>}
+        {s.payment_signature && (
+          <p className="text-sm">
+            <span className="sol-chip">Paid on Solana</span>{" "}
+            <a className="text-brand underline" target="_blank" rel="noreferrer"
+              href={`https://explorer.solana.com/tx/${s.payment_signature}?cluster=devnet`}>View transaction</a>
+          </p>
+        )}
       </section>
+
+      {canReview && onChange && (
+        <ReviewActions s={s} escrow={campaign?.escrow_address ?? null} onChange={onChange} />
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { shortAddr, solFromLamports } from "../lib/solana";
 import CampaignMap from "../components/CampaignMap";
 import EscrowPanel from "../components/EscrowPanel";
 import StatusChip from "../components/StatusChip";
+import SubmissionsPanel from "../components/SubmissionsPanel";
 
 export default function CampaignDetail() {
   const { id } = useParams();
@@ -54,6 +55,7 @@ export default function CampaignDetail() {
       </div>
 
       <EscrowPanel c={c} onChange={setC} />
+      <SubmissionsPanel campaignId={c.id} />
       <CampaignMap area={c.area} tasks={tasks} />
     </div>
   );

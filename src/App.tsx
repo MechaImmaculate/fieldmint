@@ -13,6 +13,7 @@ import ReviewerDashboard from "./pages/ReviewerDashboard";
 import CampaignsPage from "./pages/CampaignsPage";
 import NewCampaign from "./pages/NewCampaign";
 import CampaignDetail from "./pages/CampaignDetail";
+import ReviewSubmission from "./pages/ReviewSubmission";
 import WalletPage from "./pages/WalletPage";
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
                 <CampaignsPage view="review" base="/review" title="Live campaigns"
                   subtitle="Funded campaigns you can review and pay out." />} />
               <Route path="campaigns/:id" element={<CampaignDetail />} />
+              <Route path="submissions/:id" element={<ReviewSubmission />} />
               <Route path="wallet" element={<WalletPage role="reviewer" />} />
             </Route>
           </Route>
