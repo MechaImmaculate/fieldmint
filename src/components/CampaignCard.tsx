@@ -3,9 +3,9 @@ import type { Campaign } from "../lib/api";
 import { solFromLamports } from "../lib/solana";
 import StatusChip from "./StatusChip";
 
-export default function CampaignCard({ c }: { c: Campaign }) {
+export default function CampaignCard({ c, base }: { c: Campaign; base: string }) {
   return (
-    <Link to={`/app/campaigns/${c.id}`}
+    <Link to={`${base}/campaigns/${c.id}`}
       className="rounded-2xl border border-border-low bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">{c.region}</span>

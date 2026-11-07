@@ -79,7 +79,7 @@ export default function ContributorDashboard() {
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((c) => <CampaignCard key={c.id} c={c} />)}
+        {items.map((c) => <CampaignCard key={c.id} c={c} base="/contribute" />)}
       </div>
     </div>
   );

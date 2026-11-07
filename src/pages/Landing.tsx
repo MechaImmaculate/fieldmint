@@ -26,7 +26,7 @@ export default function Landing() {
             <a href="#how" className="hover:text-foreground">How it works</a>
             <a href="#contact" className="hover:text-foreground">Contact</a>
           </nav>
-          <Link to="/app" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">
+          <Link to="/login" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">
             Sign in
           </Link>
         </div>
@@ -47,7 +47,7 @@ export default function Landing() {
               payments on Solana.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link to="/app" className="rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white">
+              <Link to="/login" className="rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white">
                 Get started
               </Link>
               <a href="#contact" className="rounded-lg border border-border-strong bg-card px-6 py-3 text-sm font-semibold">
