@@ -21,6 +21,7 @@ from .db import Base, SessionLocal, engine, get_db
 from .models import Campaign, Profile, Region, Task
 from .escrow import router as escrow_router
 from .tasks import router as tasks_router
+from .ledger import router as ledger_router
 
 DATA_FILE = Path(__file__).parent / "data" / "kenya_counties.geojson"
 
@@ -75,6 +76,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(escrow_router)
 app.include_router(tasks_router)
+app.include_router(ledger_router)
 
 @app.on_event("startup")
 def init_db():

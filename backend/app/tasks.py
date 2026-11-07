@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point, mapping
@@ -20,6 +20,7 @@ from .solana_rpc import get_parsed_tx
 from .auth import User, current_user, require_role
 from .db import get_db
 from .models import Campaign, Profile, Submission, Task
+from .ai import assess_submission
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))
 MAX_PHOTO = 8 * 1024 * 1024
@@ -87,6 +88,7 @@ def sub_out(db: Session, s: Submission, t: Task, c: Campaign) -> dict:
         "review_reason": s.review_reason, "reviewed_by": s.reviewed_by,
         "reviewed_at": s.reviewed_at.isoformat() if s.reviewed_at else None,
         "payment_signature": s.payment_signature,
+        "ai_status": s.ai_status, "ai": s.ai_assessment,
     }
 
 
@@ -146,6 +148,7 @@ def release_task(task_id: uuid.UUID, user: User = Depends(current_user), db: Ses
 @router.post("/tasks/{task_id}/submit")
 def submit_task(
     task_id: uuid.UUID,
+    background: BackgroundTasks,
     lat: float = Form(...),
     lng: float = Form(...),
     accuracy_m: float | None = Form(None),
@@ -233,6 +236,7 @@ def submit_task(
     db.add(s)
     db.commit()
     db.refresh(s)
+    background.add_task(assess_submission, str(s.id))
     return sub_out(db, s, t, c)
 
 
@@ -353,3 +357,15 @@ def confirm_payment(submission_id: uuid.UUID, body: PaidIn,
     db.commit()
     db.refresh(s)
     return sub_out(db, s, t, c)
+
+@router.post("/submissions/{submission_id}/assess")
+def rerun_assessment(submission_id: uuid.UUID, background: BackgroundTasks,
+                     user: User = Depends(require_role("reviewer")), db: Session = Depends(get_db)):
+    s = db.get(Submission, submission_id)
+    if not s:
+        raise HTTPException(404, "Submission not found")
+    s.ai_status, s.ai_assessment = "pending", None
+    db.commit()
+    db.refresh(s)
+    background.add_task(assess_submission, str(s.id))
+    return sub_out(db, s, db.get(Task, s.task_id), db.get(Campaign, s.campaign_id))
