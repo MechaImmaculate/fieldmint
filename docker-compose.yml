@@ -1,6 +1,7 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    restart: unless-stopped
     environment:
       POSTGRES_USER: fieldmint
       POSTGRES_PASSWORD: fieldmint
@@ -13,6 +14,7 @@ services:
       retries: 20
   api:
     build: ./backend
+    restart: unless-stopped
     env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql+psycopg://fieldmint:fieldmint@db:5432/fieldmint
@@ -20,7 +22,10 @@ services:
     ports: ["8000:8000"]
     depends_on:
       db: { condition: service_healthy }
-    volumes: ["./backend/app:/code/app"]
+    volumes:
+      - ./backend/app:/code/app
+      - uploads:/data/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 volumes:
   pgdata:
+  uploads:

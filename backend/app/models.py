@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,10 +45,39 @@ class Task(Base):
     campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
     location = mapped_column(Geometry("POINT", srid=4326))
     status: Mapped[str] = mapped_column(String(20), default="open")
+    claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class Profile(Base):
     __tablename__ = "profiles"
     wallet: Mapped[str] = mapped_column(String(64), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(80))
     county: Mapped[str] = mapped_column(String(80))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now()) 
+
+class Submission(Base):
+    __tablename__ = "submissions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), unique=True)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
+    contributor_wallet: Mapped[str] = mapped_column(String(64), index=True)
+    location = mapped_column(Geometry("POINT", srid=4326))
+    accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_source: Mapped[str] = mapped_column(String(10), default="device")
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    crop_type: Mapped[str] = mapped_column(String(60), default="")
+    growth_stage: Mapped[str] = mapped_column(String(60), default="")
+    condition: Mapped[str] = mapped_column(String(60), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    photo_path: Mapped[str] = mapped_column(String(200))
+    photo_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    record_hash: Mapped[str] = mapped_column(String(64))
+    distance_m: Mapped[float] = mapped_column(Float)
+    inside_area: Mapped[bool] = mapped_column(Boolean)
+    checks: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(20), default="submitted", index=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_signature: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

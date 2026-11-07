@@ -9,3 +9,4 @@ pynacl
 base58
 pyjwt
 httpx
+python-multipart
