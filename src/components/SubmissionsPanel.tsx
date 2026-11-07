@@ -31,7 +31,7 @@ export default function SubmissionsPanel({ campaignId }: { campaignId: string })
             </button>
             {open === s.id && (
               <div className="border-t border-border-low p-3">
-                <SubmissionReview s={s} canReview={roles.includes("reviewer")} onChange={update} />
+                <SubmissionReview s={s} showAi canReview={roles.includes("reviewer")} onChange={update} />
               </div>
             )}
           </div>

@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { api, type Campaign } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { km, type Submission } from "../lib/field";
+import AiAssessment from "./AiAssessment";
 import AuthImage from "./AuthImage";
 import ReviewActions from "./ReviewActions";
 import SubStatus from "./SubStatus";
 import TaskMap from "./TaskMap";
 
-type Props = { s: Submission; canReview?: boolean; onChange?: (s: Submission) => void };
+type Props = { s: Submission; canReview?: boolean; showAi?: boolean; onChange?: (s: Submission) => void };
 
-export default function SubmissionReview({ s, canReview = false, onChange }: Props) {
+export default function SubmissionReview({ s, canReview = false, showAi = false, onChange }: Props) {
   const { token } = useAuth();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
 
@@ -85,6 +86,8 @@ export default function SubmissionReview({ s, canReview = false, onChange }: Pro
           </p>
         )}
       </section>
+
+      {showAi && <AiAssessment s={s} canRerun={canReview} />}
 
       {canReview && onChange && (
         <ReviewActions s={s} escrow={campaign?.escrow_address ?? null} onChange={onChange} />

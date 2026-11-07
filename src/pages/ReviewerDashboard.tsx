@@ -20,6 +20,12 @@ export default function ReviewerDashboard() {
   }, [token]);
 
   const flagged = (s: Submission) => s.checks.filter((c) => c.status === "flag").length;
+  const aiFlags = (s: Submission) => {
+  const a = s.ai;
+  if (!a) return 0;
+  return [a.photo_vs_crop, a.photo_vs_growth_stage, a.form_consistency, a.photo_quality]
+    .filter((i) => i && (i.verdict === "inconsistent" || i.verdict === "poor")).length;
+};
   const count = (st: string) => items.filter((s) => s.status === st).length;
   const shown = tab === "all" ? items : items.filter((s) => s.status === tab);
   const stats: [string, number][] = [
@@ -69,6 +75,7 @@ export default function ReviewerDashboard() {
             </div>
             <div className="flex items-center gap-3">
               {flagged(s) > 0 && <span className="text-xs font-medium text-amber-700">⚑ {flagged(s)} flag{flagged(s) > 1 ? "s" : ""}</span>}
+              {aiFlags(s) > 0 && <span className="text-xs font-medium text-danger">AI: {aiFlags(s)}</span>}
               <SubStatus status={s.status} />
             </div>
           </Link>

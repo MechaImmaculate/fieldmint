@@ -12,6 +12,8 @@ export type Submission = {
   captured_at: string; created_at: string; checks: Check[]; record_hash: string; photo_sha256: string;
   review_reason: string | null; reviewed_by: string | null; reviewed_at: string | null;
   payment_signature: string | null;
+  ai_status: "pending" | "done" | "unavailable" | "error";
+  ai: AiAssessment | null;
 };
 
 export type TaskDetail = {
@@ -55,6 +57,8 @@ export const field = {
     call<Submission>(`/submissions/${id}/review`, token, { method: "POST", body: JSON.stringify(body) }),
   confirmPayment: (id: string, signature: string | null, token: string) =>
     call<Submission>(`/submissions/${id}/confirm-payment`, token, { method: "POST", body: JSON.stringify({ signature }) }),
+  assess: (id: string, token: string) => call<Submission>(`/submissions/${id}/assess`, token, { method: "POST" }),
+  ledger: (token: string) => call<Ledger>("/me/ledger", token),
   photoUrl: async (id: string, token: string) => {
     const res = await fetch(`${API}/submissions/${id}/photo`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error("Photo unavailable");
@@ -72,3 +76,22 @@ export function haversine(lat1: number, lng1: number, lat2: number, lng2: number
 }
 
 export const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+
+export type AiItem = { verdict: "consistent" | "inconsistent" | "unclear" | "good" | "poor"; explanation: string };
+export type AiAssessment = {
+  photo_vs_crop: AiItem; photo_vs_growth_stage: AiItem; form_consistency: AiItem; photo_quality: AiItem;
+  concerns: string[]; reviewer_focus: string[]; summary: string; confidence: "low" | "medium" | "high";
+  model?: string; photo_seen?: boolean; assessed_at?: string; error?: string;
+};
+
+export type LedgerReceipt = {
+  address: string; campaign_title: string; amount_lamports: number; paid_at: number; submission_hash: string;
+};
+export type Ledger = {
+  earned: { total_lamports: number; count: number; receipts: LedgerReceipt[] };
+  escrow?: {
+    held_lamports: number; paid_out_lamports: number;
+    campaigns: { id: string; title: string; escrow: string; balance_lamports: number; paid_count: number; max_payouts: number }[];
+  };
+  released?: { total_lamports: number; count: number };
+};

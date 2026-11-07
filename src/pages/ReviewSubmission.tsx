@@ -18,7 +18,7 @@ export default function ReviewSubmission() {
   return (
     <div className="space-y-4">
       <Link to="/review" className="text-sm text-muted hover:text-foreground">← Back to queue</Link>
-      <SubmissionReview s={s} canReview onChange={setS} />
+      <SubmissionReview s={s} showAi canReview onChange={setS} />
     </div>
   );
 }
