@@ -3,8 +3,10 @@ import json
 import math
 import os
 import uuid
+import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -12,8 +14,10 @@ from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point, mapping
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from .escrow import PROGRAM_ID, RECEIPT_LEN, b58, rpc
+from .solana_rpc import get_parsed_tx
 
-from .auth import User, current_user
+from .auth import User, current_user, require_role
 from .db import get_db
 from .models import Campaign, Profile, Submission, Task
 
@@ -269,3 +273,83 @@ def submission_photo(submission_id: uuid.UUID, user: User = Depends(current_user
     if not path.exists():
         raise HTTPException(404, "Photo not found")
     return FileResponse(path, media_type=MIME.get(path.suffix[1:], "application/octet-stream"))
+
+class ReviewIn(BaseModel):
+    decision: str = Field(pattern="^(approved|rejected)$")
+    reason: str = Field(default="", max_length=1000)
+
+
+class PaidIn(BaseModel):
+    signature: str | None = Field(default=None, min_length=64, max_length=100)
+
+
+@router.get("/review/submissions")
+def review_queue(user: User = Depends(require_role("reviewer")), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Submission).order_by(Submission.created_at.desc()).limit(200)).all()
+    return [sub_out(db, s, db.get(Task, s.task_id), db.get(Campaign, s.campaign_id)) for s in rows]
+
+
+@router.post("/submissions/{submission_id}/review")
+def review_submission(submission_id: uuid.UUID, body: ReviewIn,
+                      user: User = Depends(require_role("reviewer")), db: Session = Depends(get_db)):
+    s = db.get(Submission, submission_id)
+    if not s:
+        raise HTTPException(404, "Submission not found")
+    if s.contributor_wallet == user.wallet:
+        raise HTTPException(403, "You cannot review your own submission")
+    if s.status != "submitted":
+        raise HTTPException(409, "This submission has already been decided")
+    if body.decision == "rejected" and not body.reason.strip():
+        raise HTTPException(422, "Give a reason when rejecting")
+    t, c = db.get(Task, s.task_id), db.get(Campaign, s.campaign_id)
+    s.status = body.decision
+    s.review_reason = body.reason.strip() or None
+    s.reviewed_by = user.wallet
+    s.reviewed_at = datetime.now(timezone.utc)
+    t.status = body.decision
+    db.commit()
+    db.refresh(s)
+    return sub_out(db, s, t, c)
+
+
+@router.post("/submissions/{submission_id}/confirm-payment")
+def confirm_payment(submission_id: uuid.UUID, body: PaidIn,
+                    user: User = Depends(require_role("reviewer")), db: Session = Depends(get_db)):
+    s = db.get(Submission, submission_id)
+    c = db.get(Campaign, s.campaign_id) if s else None
+    if not s or not c:
+        raise HTTPException(404, "Submission not found")
+    t = db.get(Task, s.task_id)
+    if s.status == "paid":
+        return sub_out(db, s, t, c)
+    if s.status != "approved":
+        raise HTTPException(409, "Approve the submission before paying")
+    if not c.escrow_address:
+        raise HTTPException(409, "This campaign has no escrow")
+
+    if body.signature:
+        tx = get_parsed_tx(body.signature)
+        if not tx or not tx.get("meta") or tx["meta"].get("err") is not None:
+            raise HTTPException(422, "Transaction not found, failed, or not confirmed yet")
+        if not any(ix.get("programId") == PROGRAM_ID for ix in tx["transaction"]["message"]["instructions"]):
+            raise HTTPException(422, "Transaction does not call the FieldMint escrow program")
+
+    raw = rpc("getProgramAccounts", [PROGRAM_ID, {
+        "encoding": "base64", "commitment": "confirmed",
+        "filters": [{"dataSize": RECEIPT_LEN}, {"memcmp": {"offset": 8, "bytes": c.escrow_address}}],
+    }])
+    found = False
+    for item in raw:
+        d = base64.b64decode(item["account"]["data"][0])
+        if d[72:104].hex() == s.record_hash and b58(d[40:72]) == s.contributor_wallet:
+            found = True
+            break
+    if not found:
+        raise HTTPException(422, "No matching on-chain receipt yet. If you just paid, try again in a few seconds.")
+
+    s.status = "paid"
+    s.payment_signature = body.signature
+    t.status = "paid"
+    db.commit()
+    db.refresh(s)
+    return sub_out(db, s, t, c)
