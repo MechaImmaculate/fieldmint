@@ -7,6 +7,8 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import OrgDashboard from "./pages/OrgDashboard";
 import ContributorDashboard from "./pages/ContributorDashboard";
+import ContributorCampaign from "./pages/ContributorCampaign";
+import TaskSubmit from "./pages/TaskSubmit";
 import ReviewerDashboard from "./pages/ReviewerDashboard";
 import CampaignsPage from "./pages/CampaignsPage";
 import NewCampaign from "./pages/NewCampaign";
@@ -49,7 +51,8 @@ export default function App() {
           <Route element={<RequireAuth role="contributor" />}>
             <Route path="contribute" element={<Shell role="contributor" />}>
               <Route index element={<ContributorDashboard />} />
-              <Route path="campaigns/:id" element={<CampaignDetail />} />
+              <Route path="campaigns/:id" element={<ContributorCampaign />} />
+              <Route path="tasks/:id" element={<TaskSubmit />} />
               <Route path="wallet" element={<WalletPage role="contributor" />} />
             </Route>
           </Route>

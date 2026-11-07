@@ -61,7 +61,11 @@ export default function Shell({ role }: { role: Role }) {
         <div className="space-y-3">
           <WalletCard box={t.wallet} />
           {roles.length > 1 && (
-            <Link to="/app" className="block text-center text-xs underline opacity-80">Switch dashboard</Link>
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs opacity-80">
+              {roles.includes("org") && role !== "org" && <Link to="/org" className="underline">Organization</Link>}
+              {roles.includes("reviewer") && role !== "reviewer" && <Link to="/review" className="underline">Reviewer</Link>}
+              {role !== "contributor" && <Link to="/contribute" className="underline">Contributor</Link>}
+            </div>
           )}
         </div>
       </aside>
