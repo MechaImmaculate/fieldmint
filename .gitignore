@@ -28,3 +28,4 @@ lerna-debug.log*
 
 backend/.env
 backend/escrow.json
+.env
