@@ -29,3 +29,18 @@ lerna-debug.log*
 backend/.env
 backend/escrow.json
 .env
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+backend/escrow.json
+
+# Local uploads
+uploads/

@@ -85,25 +85,35 @@ def assess_submission(submission_id: str) -> None:
             return
         c = db.get(Campaign, s.campaign_id)
         try:
-            content: list[dict] = []
+            parts: list[dict] = []
             path = UPLOAD_DIR / s.photo_path
             has_image = path.exists() and path.stat().st_size <= MAX_IMAGE
             if has_image:
-                content.append({"type": "image", "source": {
-                    "type": "base64", "media_type": MEDIA.get(path.suffix.lower(), "image/jpeg"),
+                parts.append({"inline_data": {
+                    "mime_type": MEDIA.get(path.suffix.lower(), "image/jpeg"),
                     "data": base64.b64encode(path.read_bytes()).decode()}})
-            content.append({"type": "text", "text": _prompt(s, c, has_image)})
+            parts.append({"text": _prompt(s, c, has_image)})
 
             r = httpx.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": MODEL, "max_tokens": 1500, "system": SYSTEM, "tools": [TOOL],
-                      "tool_choice": {"type": "tool", "name": "report_assessment"},
-                      "messages": [{"role": "user", "content": content}]},
+                f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent",
+                headers={"x-goog-api-key": API_KEY, "content-type": "application/json"},
+                json={
+                    "systemInstruction": {"parts": [{"text": SYSTEM}]},
+                    "contents": [{"role": "user", "parts": parts}],
+                    "tools": [{"functionDeclarations": [TOOL]}],
+                    "toolConfig": {"functionCallingConfig": {
+                        "mode": "ANY", "allowedFunctionNames": ["report_assessment"]}},
+                    "generationConfig": {"maxOutputTokens": 4000},
+                },
                 timeout=90,
             )
             r.raise_for_status()
-            result = next((b["input"] for b in r.json().get("content", []) if b.get("type") == "tool_use"), None)
+            cand = (r.json().get("candidates") or [{}])[0]
+            result = next(
+                (p["functionCall"]["args"] for p in cand.get("content", {}).get("parts", [])
+                 if "functionCall" in p),
+                None,
+            )
             if not result:
                 raise ValueError("No structured assessment returned")
             result.update(model=MODEL, photo_seen=has_image, assessed_at=datetime.now(timezone.utc).isoformat())
