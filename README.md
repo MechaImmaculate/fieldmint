@@ -213,7 +213,7 @@ FieldMint is an early-stage hackathon prototype running on Solana Devnet.
 | Human approval and rejection workflow | Implemented |
 | Solana payout and submission-specific receipts | Implemented |
 | On-chain earnings and escrow information | Implemented |
-| AI-assisted assessment | Optional; not enabled in the current hosted deployment |
+| AI-assisted assessment | Optional; enabled in the current hosted deployment |
 | CSV and GeoJSON dataset exports | Planned |
 | Advanced campaign analytics | Planned |
 | USDC settlement | Planned |
